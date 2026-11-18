@@ -18,6 +18,7 @@ gpiozero
 lgpio
 spidev
 RPi.GPIO
+Adafruit-PCA9685
 
 #ModuleNotFoundError: No module named 'pykms'
 #sudo apt update && sudo apt install -y python3-kms++ python3-picamera2
