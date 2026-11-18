@@ -120,7 +120,7 @@ def robot_ip():
 
 
 def socket_connect():     #Call this function to connect with the server
-    global ip_stu, ipaddr
+    global ip_stu
     ip_adr = robot_ip()
 
     l_ip_4.config(text='Connecting')
