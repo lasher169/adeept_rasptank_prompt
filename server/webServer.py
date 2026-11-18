@@ -352,7 +352,6 @@ def wifi_check():
         s.connect(("1.1.1.1",80))
         ipaddr_check=s.getsockname()[0]
         s.close()
-        print(ipaddr_check)
         update_code()
         if OLED_connection:
             screen.screen_show(2, 'IP:'+ipaddr_check)
@@ -497,9 +496,14 @@ async def recv_msg(websocket):
         response = json.dumps(response)
         await websocket.send(response)
 
-async def main_logic(websocket, path):
+async def main_logic(websocket, path=None):
     await check_permit(websocket)
     await recv_msg(websocket)
+
+async def start_ws_server():
+    async with websockets.serve(main_logic, '0.0.0.0', 8888):
+        print('waiting for connection...')
+        await asyncio.Future()
 
 if __name__ == '__main__':
     switch.switchSetup()
@@ -522,13 +526,12 @@ if __name__ == '__main__':
         print('Use "sudo pip3 install rpi_ws281x" to install WS_281x package\n使用"sudo pip3 install rpi_ws281x"命令来安装rpi_ws281x')
         pass
 
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     while  1:
         wifi_check()
         try:                  #Start server,waiting for client
-            start_server = websockets.serve(main_logic, '0.0.0.0', 8888)
-            asyncio.get_event_loop().run_until_complete(start_server)
-            print('waiting for connection...')
-            # print('...connected from :', addr)
+            loop.run_until_complete(start_ws_server())
             break
         except Exception as e:
             print(e)
@@ -538,9 +541,3 @@ if __name__ == '__main__':
             RL.setColor(0,80,255)
         except:
             pass
-    try:
-        asyncio.get_event_loop().run_forever()
-    except Exception as e:
-        print(e)
-        RL.setColor(0,0,0)
-        move.destroy()

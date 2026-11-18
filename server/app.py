@@ -3,10 +3,12 @@ from importlib import import_module
 import os
 from flask import Flask, render_template, Response, send_from_directory
 from flask_cors import *
+from werkzeug.serving import run_simple
 # import camera driver
 
 from camera_opencv import Camera
 import threading
+import logging
 
 # Raspberry Pi camera module (requires picamera package)
 # from camera_pi import Camera
@@ -69,7 +71,8 @@ class webapp:
         camera.colorFindSet(H, S, V)
 
     def thread(self):
-        app.run(host='0.0.0.0', threaded=True)
+        logging.getLogger('werkzeug').setLevel(logging.ERROR)
+        run_simple('0.0.0.0', 5000, app, threaded=True)
 
     def startthread(self):
         fps_threading=threading.Thread(target=self.thread)         #Define a thread for FPV and OpenCV
