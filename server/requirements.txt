@@ -1,0 +1,27 @@
+adafruit-circuitpython-pca9685
+adafruit-blinka
+rpi_ws281x
+mpu6050-raspberrypi
+flask
+flask_cors
+websockets
+numpy
+opencv-python
+opencv-contrib-python
+imutils
+pyzmq
+psutil
+luma.oled
+picamera2
+pillow
+gpiozero
+lgpio
+spidev
+RPi.GPIO
+
+#ModuleNotFoundError: No module named 'pykms'
+#sudo apt update && sudo apt install -y python3-kms++ python3-picamera2
+
+#sudo apt install -y build-essential python3-dev swig liblgpio-dev
+
+#sudo apt install -y libgl1 libglib2.0-0
