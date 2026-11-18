@@ -28,6 +28,8 @@ import app
 OLED_connection = 1
 try:
     import OLED
+    if OLED.device is None:
+        raise RuntimeError('no OLED on i2c bus 1')
     screen = OLED.OLED_ctrl()
     screen.start()
     screen.screen_show(1, 'ADEEPT.COM')

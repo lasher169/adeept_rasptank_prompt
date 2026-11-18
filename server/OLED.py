@@ -11,6 +11,7 @@ from luma.oled.device import ssd1306, ssd1325, ssd1331, sh1106
 import time
 import threading
 
+device = None
 try:
 	serial = i2c(port=1, address=0x3C)
 	device = ssd1306(serial, rotate=0)
@@ -44,6 +45,8 @@ class OLED_ctrl(threading.Thread):
 		self.__running.set()	  # 将running设置为True
 
 	def run(self):
+		if device is None:
+			return
 		while self.__running.isSet():
 			self.__flag.wait()	  # 为True时立即返回, 为False时阻塞直到内部的标识位为True后返回
 			with canvas(device) as draw:
