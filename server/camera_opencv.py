@@ -420,16 +420,36 @@ class Camera(BaseCamera):
 
     @staticmethod
     def frames():
-        camera = cv2.VideoCapture(Camera.video_source)
-        if not camera.isOpened():
-            raise RuntimeError('Could not start camera.')
+        # The CSI camera is driven by libcamera, not V4L2: cv2.VideoCapture(0)
+        # opens /dev/video0 (unicam) but read() returns nothing. picamera2 is
+        # the working path; cv2 stays as a fallback for a USB camera.
+        cam = None
+        camera = None
+        try:
+            from picamera2 import Picamera2
+            cam = Picamera2()
+            cam.configure(cam.create_preview_configuration(main={"size": (640, 480)}))
+            cam.start()
+        except Exception as exc:
+            print("picamera2 unavailable (" + str(exc) + "); falling back to cv2")
+            camera = cv2.VideoCapture(Camera.video_source)
+            if not camera.isOpened():
+                raise RuntimeError('Could not start camera.')
 
         cvt = CVThread()
         cvt.start()
 
         while True:
             # read current frame
-            _, img = camera.read()
+            if cam is not None:
+                # XBGR8888 -> drop the pad byte, leaving BGR for OpenCV
+                img = cam.capture_array()[:, :, :3]
+            else:
+                _, img = camera.read()
+
+            if img is None or img.size == 0:
+                time.sleep(0.05)
+                continue
 
             if Camera.modeSelect == 'none':
                 switch.switch(1,0)
