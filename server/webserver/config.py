@@ -5,11 +5,24 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 ROOT = Path(__file__).resolve().parents[2]
 
-load_dotenv(ROOT / ".env")
+
+def load_env(path: Path) -> None:
+    """Read ``KEY=value`` lines into os.environ, leaving real env vars alone."""
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+load_env(ROOT / ".env")
 
 
 def port() -> int:
