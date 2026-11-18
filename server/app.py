@@ -9,12 +9,14 @@ from werkzeug.serving import run_simple
 from camera_opencv import Camera
 import threading
 import logging
+from webserver.app import add_prompt_routes
 
 # Raspberry Pi camera module (requires picamera package)
 # from camera_pi import Camera
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
+add_prompt_routes(app)
 camera = Camera()
 
 def gen(camera):
