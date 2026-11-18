@@ -417,7 +417,7 @@ async def recv_msg(websocket):
         data = ''
         data = await websocket.recv()
         
-        print("incoming data")
+        print("incoming data", data)
         
         try:
             data = json.loads(data)
