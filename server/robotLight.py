@@ -35,7 +35,13 @@ class RobotLight(threading.Thread):
 		# Create NeoPixel object with appropriate configuration.
 		self.strip = Adafruit_NeoPixel(self.LED_COUNT, self.LED_PIN, self.LED_FREQ_HZ, self.LED_DMA, self.LED_INVERT, self.LED_BRIGHTNESS, self.LED_CHANNEL)
 		# Intialize the library (must be called once before other functions).
-		self.strip.begin()
+		# The strip needs root for the DMA mailbox; without it the whole server
+		# would fail to import, so degrade to a no-op strip instead.
+		try:
+			self.strip.begin()
+		except RuntimeError as exc:
+			print("lights disabled: " + str(exc))
+			self.strip = None
 
 		super(RobotLight, self).__init__(*args, **kwargs)
 		self.__flag = threading.Event()
@@ -44,6 +50,8 @@ class RobotLight(threading.Thread):
 	# Define functions which animate LEDs in various ways.
 	def setColor(self, R, G, B):
 		"""Wipe color across display a pixel at a time."""
+		if self.strip is None:
+			return
 		color = Color(int(R),int(G),int(B))
 		for i in range(self.strip.numPixels()):
 			self.strip.setPixelColor(i, color)
@@ -51,6 +59,8 @@ class RobotLight(threading.Thread):
 
 
 	def setSomeColor(self, R, G, B, ID):
+		if self.strip is None:
+			return
 		color = Color(int(R),int(G),int(B))
 		#print(int(R),'  ',int(G),'  ',int(B))
 		for i in ID:
