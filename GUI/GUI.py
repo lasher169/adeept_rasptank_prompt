@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import zmq
 
-PROMPT_PORT = int(os.environ.get('WEB_PORT', 5077))   # server/webserver /prompt
+DEFAULT_PORT = int(os.environ.get('WEB_PORT', 5077))  # server/webserver /prompt
 INFO_PORT = 2256                                     # CPU/RAM feed from the robot
 VIDEO_PORT = 5555                                    # FPV feed from the robot
 
@@ -119,6 +119,17 @@ def robot_ip():
     return E1.get().strip() or num_import('IP:')
 
 
+def prompt_port():
+    raw = E2.get().strip() or str(DEFAULT_PORT)
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError('%r is not a number' % raw) from None
+    if not 1 <= value <= 65535:
+        raise ValueError('%d is outside 1-65535' % value)
+    return value
+
+
 def socket_connect():     #Call this function to connect with the server
     global ip_stu
     ip_adr = robot_ip()
@@ -127,22 +138,32 @@ def socket_connect():     #Call this function to connect with the server
     l_ip_4.config(bg='#FF8F00')
 
     try:
-        with urllib.request.urlopen('http://%s:%d/health' % (ip_adr, PROMPT_PORT), timeout=5) as resp:
-            json.loads(resp.read().decode() or '{}')
-    except Exception as exc:
-        print('Cannot connect to %s:%d (%s)' % (ip_adr, PROMPT_PORT, exc))
+        port = prompt_port()
+    except ValueError as exc:
+        print('Bad port (%s)' % exc)
         l_ip_4.config(text='Disconnected')
         l_ip_4.config(bg='#F44336')
         ip_stu = 1
         return
 
-    print('Connected to %s:%d' % (ip_adr, PROMPT_PORT))
+    try:
+        with urllib.request.urlopen('http://%s:%d/health' % (ip_adr, port), timeout=5) as resp:
+            json.loads(resp.read().decode() or '{}')
+    except Exception as exc:
+        print('Cannot connect to %s:%d (%s)' % (ip_adr, port, exc))
+        l_ip_4.config(text='Disconnected')
+        l_ip_4.config(bg='#F44336')
+        ip_stu = 1
+        return
+
+    print('Connected to %s:%d' % (ip_adr, port))
     l_ip_5.config(text='IP:%s' % ip_adr)
     l_ip_4.config(text='Connected')
     l_ip_4.config(bg='#558B2F')
 
     replace_num('IP:', ip_adr)
     E1.config(state='disabled')
+    E2.config(state='disabled')
     Btn14.config(state='disabled')
     ip_stu = 0
 
@@ -165,8 +186,14 @@ def send_prompt():
         return
 
     set_send_status('Sending...', '#E1F5FE')
+    try:
+        port = prompt_port()
+    except ValueError as exc:
+        set_send_status('Bad port: %s' % exc, '#F44336')
+        return
+
     body = json.dumps({'prompt': text}).encode()
-    req = urllib.request.Request('http://%s:%d/prompt' % (robot_ip(), PROMPT_PORT),
+    req = urllib.request.Request('http://%s:%d/prompt' % (robot_ip(), port),
                                  data=body, headers={'Content-Type': 'application/json'})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -178,7 +205,7 @@ def send_prompt():
 
 
 def loop():                      #GUI
-    global root, E1, l_ip_4, l_ip_5, Btn14, CPU_TEP_lab, CPU_USE_lab, RAM_lab, prompt_box, send_status
+    global root, E1, E2, l_ip_4, l_ip_5, Btn14, CPU_TEP_lab, CPU_USE_lab, RAM_lab, prompt_box, send_status
     color_bg = '#000000'        #Set background color
     color_text = '#E1F5FE'      #Set text color
     color_btn = '#0277BD'       #Set button color
@@ -218,6 +245,13 @@ def loop():                      #GUI
 
     l_ip_3 = tk.Label(root, width=10, text='IP Address:', fg=color_text, bg='#000000')
     l_ip_3.place(x=175, y=15)                         #Define a Label and put it in position
+
+    l_port = tk.Label(root, width=10, text='Port:', fg=color_text, bg='#000000')
+    l_port.place(x=175, y=72)                         #Port label
+
+    E2 = tk.Entry(root, show=None, width=8, bg="#37474F", fg='#eceff1')
+    E2.place(x=255, y=70)                             #Port entry
+    E2.insert(0, str(DEFAULT_PORT))
 
     label_openCV = tk.Label(root, width=28, text='OpenCV Status', fg=color_text, bg=color_btn)
     label_openCV.place(x=180, y=110)                         #Define a Label and put it in position
