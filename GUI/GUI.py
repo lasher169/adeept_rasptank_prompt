@@ -18,8 +18,9 @@ from socket import *
 import cv2
 import numpy as np
 import zmq
+from websockets.sync.client import connect as ws_connect
 
-DEFAULT_PORT = int(os.environ.get('WEB_PORT', 5077))  # server/webserver /prompt
+DEFAULT_PORT = int(os.environ.get('WEB_PORT', 8888))  # server/webserver /prompt
 INFO_PORT = 2256                                     # CPU/RAM feed from the robot
 VIDEO_PORT = 5555                                    # FPV feed from the robot
 
@@ -27,6 +28,7 @@ BUFSIZ = 1024
 ip_stu = 1          # 1 = disconnected, 0 = connected
 frame_num = 0
 fps = 0
+ws = None
 
 ########>>>>>VIDEO<<<<<########
 
@@ -146,9 +148,12 @@ def socket_connect():     #Call this function to connect with the server
         ip_stu = 1
         return
 
+    global ws
     try:
-        with urllib.request.urlopen('http://%s:%d/health' % (ip_adr, port), timeout=5) as resp:
-            json.loads(resp.read().decode() or '{}')
+        ws = ws_connect('ws://%s:%d' % (ip_adr, port), open_timeout=5)
+        ws.send('admin:123456')
+        if 'congratulation' not in ws.recv(timeout=5):
+            raise RuntimeError('login rejected')
     except Exception as exc:
         print('Cannot connect to %s:%d (%s)' % (ip_adr, port, exc))
         l_ip_4.config(text='Disconnected')
@@ -192,13 +197,13 @@ def send_prompt():
         set_send_status('Bad port: %s' % exc, '#F44336')
         return
 
-    body = json.dumps({'prompt': text}).encode()
-    req = urllib.request.Request('http://%s:%d/prompt' % (robot_ip(), port),
-                                 data=body, headers={'Content-Type': 'application/json'})
+    if ws is None:
+        set_send_status('Not connected', '#F44336')
+        return
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            payload = json.loads(resp.read().decode() or '{}')
-        set_send_status('Sent (#%s)' % payload.get('count', '?'), '#558B2F')
+        ws.send(json.dumps({'title': 'prompt', 'data': text}))
+        payload = json.loads(ws.recv(timeout=10))
+        set_send_status('Sent (#%s)' % payload.get('data', '?'), '#558B2F')
         prompt_box.delete('1.0', 'end')
     except Exception as exc:
         set_send_status('Send failed: %s' % exc, '#F44336')

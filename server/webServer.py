@@ -484,7 +484,12 @@ async def recv_msg(websocket):
                 fpv.defaultExpCom()
 
         elif(isinstance(data,dict)):
-            if data['title'] == "findColorSet":
+            if data['title'] == "prompt":
+                from webserver.app import PROMPTS
+                PROMPTS.append(str(data['data']).strip())
+                response['title'] = 'prompt'
+                response['data'] = len(PROMPTS)
+            elif data['title'] == "findColorSet":
                 color = data['data']
                 flask_app.colorFindSet(color[0],color[1],color[2])
 
