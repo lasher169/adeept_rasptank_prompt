@@ -416,6 +416,9 @@ async def recv_msg(websocket):
 
         data = ''
         data = await websocket.recv()
+        
+        print("incoming data")
+        
         try:
             data = json.loads(data)
         except Exception as e:
@@ -503,8 +506,31 @@ async def recv_msg(websocket):
         response = json.dumps(response)
         await websocket.send(response)
 
+INFO_PORT = 2256        # legacy push feed for the desktop GUI health panel
+
+
+def info_push_loop(client_ip):
+    """Push [cpu_temp cpu_use ram_use] to the GUI every 3s (opt-in: INFO_PUSH=1).
+    Only needed if the GUI is started with GUI_INFO_LISTEN=1; by default the GUI
+    polls 'get_info' over the WebSocket instead."""
+    while True:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect((client_ip, INFO_PORT))
+            sock.sendall(('%s %s %s' % (info.get_cpu_tempfunc(), info.get_cpu_use(), info.get_ram_info())).encode())
+            sock.close()
+        except Exception as exc:
+            print('info push failed: %s' % exc)
+        time.sleep(3)
+
+
 async def main_logic(websocket, path=None):
     await check_permit(websocket)
+    if os.environ.get('INFO_PUSH'):
+        client_ip = websocket.remote_address[0]
+        threading.Thread(target=info_push_loop, args=(client_ip,), daemon=True).start()
+        print('info push -> %s:%d' % (client_ip, INFO_PORT))
     await recv_msg(websocket)
 
 async def start_ws_server():
