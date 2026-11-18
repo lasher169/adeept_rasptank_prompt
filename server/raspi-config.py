@@ -12,7 +12,7 @@ import Adafruit_PCA9685
 import os
 
 
-pwm = Adafruit_PCA9685.PCA9685()    #Ultrasonic Control
+pwm = Adafruit_PCA9685.PCA9685(busnum=1)    #Ultrasonic Control
 pwm.set_pwm_freq(50)
 
 def replace_num(initial,new_num):   #Call this function to replace data in '.txt' file

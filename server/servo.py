@@ -12,7 +12,7 @@ import RPi.GPIO as GPIO
 import sys
 import Adafruit_PCA9685
 
-pwm = Adafruit_PCA9685.PCA9685()
+pwm = Adafruit_PCA9685.PCA9685(busnum=1)
 pwm.set_pwm_freq(50)
 
 def num_import_int(initial):		#Call this function to import data from '.txt' file
