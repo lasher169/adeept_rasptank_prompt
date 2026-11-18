@@ -78,12 +78,10 @@ class ServoCtrl(threading.Thread):
 
 
 	def pause(self):
-		print('......................pause..........................')
 		self.__flag.clear()
 
 
 	def resume(self):
-		print('resume')
 		self.__flag.set()
 
 
