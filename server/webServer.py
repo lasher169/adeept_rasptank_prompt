@@ -25,6 +25,10 @@ import websockets
 import json
 import app
 
+# WS_DEBUG=1 turns on per-message logging. Off by default so the GUI's 3s
+# 'get_info' health poll does not flood the console.
+DEBUG = bool(os.environ.get('WS_DEBUG'))
+
 OLED_connection = 1
 try:
     import OLED
@@ -416,13 +420,18 @@ async def recv_msg(websocket):
 
         data = ''
         data = await websocket.recv()
-        
-        print("incoming data", data)
-        
-        try:
-            data = json.loads(data)
-        except Exception as e:
-            print('not A JSON')
+
+        if DEBUG:
+            print('recv: %s' % data)
+
+        # Plain-text commands (forward, DS, get_info, wsB 50...) are not JSON,
+        # so only try to parse messages that actually look like JSON.
+        if data.lstrip().startswith('{'):
+            try:
+                data = json.loads(data)
+            except Exception as e:
+                print('bad JSON: %s' % e)
+                continue
 
         if not data:
             continue
@@ -502,7 +511,8 @@ async def recv_msg(websocket):
         else:
             pass
 
-        print(data)
+        if DEBUG:
+            print('reply: %s' % response)
         response = json.dumps(response)
         await websocket.send(response)
 
@@ -530,7 +540,8 @@ async def main_logic(websocket, path=None):
     if os.environ.get('INFO_PUSH'):
         client_ip = websocket.remote_address[0]
         threading.Thread(target=info_push_loop, args=(client_ip,), daemon=True).start()
-        print('info push -> %s:%d' % (client_ip, INFO_PORT))
+        if DEBUG:
+            print('info push -> %s:%d' % (client_ip, INFO_PORT))
     await recv_msg(websocket)
 
 async def start_ws_server():
