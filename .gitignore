@@ -2,3 +2,7 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Local scratch / per-machine files, not part of the repo
+ip.txt
+tests/
