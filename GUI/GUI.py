@@ -25,10 +25,12 @@ INFO_PORT = 2256                                     # CPU/RAM feed from the rob
 VIDEO_PORT = 5555                                    # FPV feed from the robot
 
 BUFSIZ = 1024
+INFO_INTERVAL = 3         # seconds between CPU/RAM polls
 ip_stu = 1          # 1 = disconnected, 0 = connected
 frame_num = 0
 fps = 0
 ws = None
+ws_lock = thread.Lock()   # the websockets sync client is not safe for concurrent send/recv
 
 ########>>>>>VIDEO<<<<<########
 
@@ -80,17 +82,17 @@ thread.Thread(target=video_thread, daemon=True).start()
 def replace_num(initial, new_num):   #Call this function to replace data in '.txt' file
     newline = ""
     str_num = str(new_num)
-    with open("ip.txt", "r") as f:
+    with open("IP.txt", "r") as f:
         for line in f.readlines():
             if line.find(initial) == 0:
                 line = initial + "%s" % (str_num)
             newline += line
-    with open("ip.txt", "w") as f:
+    with open("IP.txt", "w") as f:
         f.writelines(newline)
 
 
 def num_import(initial):            #Call this function to import data from '.txt' file
-    with open("ip.txt") as f:
+    with open("IP.txt") as f:
         for line in f.readlines():
             if line.find(initial) == 0:
                 r = line
@@ -98,23 +100,56 @@ def num_import(initial):            #Call this function to import data from '.tx
     return r[begin:]
 
 
-def Info_receive():
+def set_health(temp, cpu, ram):
     global CPU_TEP, CPU_USE, RAM_USE
+    CPU_TEP, CPU_USE, RAM_USE = temp, cpu, ram
+    CPU_TEP_lab.config(text='CPU Temp: %s\u2103' % CPU_TEP)
+    CPU_USE_lab.config(text='CPU Usage: %s' % CPU_USE)
+    RAM_lab.config(text='RAM Usage: %s' % RAM_USE)
+
+
+def get_info_once():
+    """Ask the robot for [cpu_temp, cpu_use, ram_use] over the existing WebSocket."""
+    with ws_lock:
+        ws.send('get_info')
+        payload = json.loads(ws.recv(timeout=5))
+    data = payload.get('data')
+    if not data or len(data) < 3:
+        raise ValueError('unexpected get_info reply: %r' % payload)
+    return data[0], data[1], data[2]
+
+
+def Info_receive():
+    """Poll robot health over the WebSocket. The old 2256 push channel is dead:
+    webServer.py never dials back to the PC, it only answers 'get_info'."""
+    while ip_stu == 0 and ws is not None:
+        try:
+            set_health(*get_info_once())
+        except Exception as exc:
+            print('Info poll failed: %s' % exc)
+            break
+        time.sleep(INFO_INTERVAL)
+
+
+def Info_push_listener():
+    """Optional legacy fallback, used only when the robot runs with INFO_PUSH=1."""
     InfoSock = socket(AF_INET, SOCK_STREAM)
     InfoSock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    InfoSock.bind(('', INFO_PORT))
+    try:
+        InfoSock.bind('', INFO_PORT)
+    except OSError as exc:
+        print('Info push listener not started (%s)' % exc)
+        return
     InfoSock.listen(5)
-    InfoSock, addr = InfoSock.accept()
-    print('Info connected')
-    while 1:
+    while ip_stu == 0:
         try:
-            info_data = str(InfoSock.recv(BUFSIZ).decode())
-            CPU_TEP, CPU_USE, RAM_USE = info_data.split()
-            CPU_TEP_lab.config(text='CPU Temp: %s℃' % CPU_TEP)
-            CPU_USE_lab.config(text='CPU Usage: %s' % CPU_USE)
-            RAM_lab.config(text='RAM Usage: %s' % RAM_USE)
-        except:
-            pass
+            conn, addr = InfoSock.accept()
+            while 1:
+                data = conn.recv(BUFSIZ).decode().split()
+                if len(data) >= 3:
+                    set_health(data[0], data[1], data[2])
+        except Exception:
+            break
 
 
 def robot_ip():
@@ -173,6 +208,8 @@ def socket_connect():     #Call this function to connect with the server
     ip_stu = 0
 
     thread.Thread(target=Info_receive, daemon=True).start()
+    if os.environ.get('GUI_INFO_LISTEN'):
+        thread.Thread(target=Info_push_listener, daemon=True).start()
 
 
 def connect_click():       #Call this function to connect with the server
@@ -201,8 +238,9 @@ def send_prompt():
         set_send_status('Not connected', '#F44336')
         return
     try:
-        ws.send(json.dumps({'title': 'prompt', 'data': text}))
-        payload = json.loads(ws.recv(timeout=10))
+        with ws_lock:
+            ws.send(json.dumps({'title': 'prompt', 'data': text}))
+            payload = json.loads(ws.recv(timeout=10))
         set_send_status('Sent (#%s)' % payload.get('data', '?'), '#558B2F')
         prompt_box.delete('1.0', 'end')
     except Exception as exc:
