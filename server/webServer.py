@@ -418,19 +418,21 @@ async def recv_msg(websocket):
             'data' : None
         }
 
-        data = ''
         data = await websocket.recv()
-        
-        print('recv: %s' % data)
+        if isinstance(data, (bytes, bytearray)):
+            data = data.decode('utf-8', 'replace')
 
         # Plain-text commands (forward, DS, get_info, wsB 50...) are not JSON,
         # so only try to parse messages that actually look like JSON.
-        if data.lstrip().startswith('{'):
+        if isinstance(data, str) and data.strip().startswith(('{', '[')):
             try:
                 data = json.loads(data)
             except Exception as e:
                 print('bad JSON: %s' % e)
                 continue
+            print('recv JSON: %s' % json.dumps(data, indent=2))
+        else:
+            print('recv text: %s' % data)
 
         if not data:
             continue
