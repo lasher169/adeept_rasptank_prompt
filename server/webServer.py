@@ -420,9 +420,8 @@ async def recv_msg(websocket):
 
         data = ''
         data = await websocket.recv()
-
-        if DEBUG:
-            print('recv: %s' % data)
+        
+        print('recv: %s' % data)
 
         # Plain-text commands (forward, DS, get_info, wsB 50...) are not JSON,
         # so only try to parse messages that actually look like JSON.
