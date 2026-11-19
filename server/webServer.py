@@ -536,13 +536,23 @@ def info_push_loop(client_ip):
 
 
 async def main_logic(websocket, path=None):
-    await check_permit(websocket)
+    addr = websocket.remote_address
+    print('connection from %s:%s' % (addr[0], addr[1]))
+    try:
+        await check_permit(websocket)
+    except websockets.ConnectionClosed:
+        print('client %s closed before authenticating' % addr[0])
+        return
+    print('connected! %s' % addr[0])
     if os.environ.get('INFO_PUSH'):
         client_ip = websocket.remote_address[0]
         threading.Thread(target=info_push_loop, args=(client_ip,), daemon=True).start()
         if DEBUG:
             print('info push -> %s:%d' % (client_ip, INFO_PORT))
-    await recv_msg(websocket)
+    try:
+        await recv_msg(websocket)
+    except websockets.ConnectionClosed:
+        print('disconnected: %s' % addr[0])
 
 async def start_ws_server():
     async with websockets.serve(main_logic, '0.0.0.0', 8888):
