@@ -70,7 +70,7 @@ def ask(prompt, system=None, timeout=30):
         'messages': messages,
         'tools': registry.get_schemas(),}).encode()
     
-    print(json.dumps(json.loads(body.decode()), indent=4))
+    print("sending this",json.dumps(json.loads(body.decode()), indent=4))
 
     
     req = urllib.request.Request(
@@ -78,8 +78,6 @@ def ask(prompt, system=None, timeout=30):
         data=body,
         headers={'Content-Type': 'application/json','Authorization': 'Bearer ' + key},
     ) 
-
-    print("sending this ",req)
 
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
