@@ -75,28 +75,31 @@ def get_FPS():
         frame_num = 0
 
 
-def opencv_r():
+def video_tick():
+    """Draw the newest frame, then reschedule.
+
+    Must run on the Tk main thread: cv2.imshow raises
+    "Unknown C++ exception from OpenCV code" when called from a worker
+    thread on macOS.
+    """
     global frame_num
-    while True:
+    if video_started:
         frame = latest_frame
-        if frame is None:
-            time.sleep(0.05)
-            continue
-        npimg = np.frombuffer(frame, dtype=np.uint8)
-        source = cv2.imdecode(npimg, 1)
-        if source is None:
-            time.sleep(0.05)
-            continue
-        cv2.putText(source, ('PC FPS: %s' % fps), (40, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-        try:
-            cv2.putText(source, ('CPU Temperature: %s' % CPU_TEP), (370, 350), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
-            cv2.putText(source, ('CPU Usage: %s' % CPU_USE), (370, 380), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
-            cv2.putText(source, ('RAM Usage: %s' % RAM_USE), (370, 410), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
-        except NameError:
-            pass
-        cv2.imshow("Stream", source)
-        frame_num += 1
-        cv2.waitKey(1)
+        if frame is not None:
+            npimg = np.frombuffer(frame, dtype=np.uint8)
+            source = cv2.imdecode(npimg, 1)
+            if source is not None:
+                cv2.putText(source, ('PC FPS: %s' % fps), (40, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                try:
+                    cv2.putText(source, ('CPU Temperature: %s' % CPU_TEP), (370, 350), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
+                    cv2.putText(source, ('CPU Usage: %s' % CPU_USE), (370, 380), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
+                    cv2.putText(source, ('RAM Usage: %s' % RAM_USE), (370, 410), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
+                except NameError:
+                    pass
+                cv2.imshow("Stream", source)
+                frame_num += 1
+                cv2.waitKey(1)
+    root.after(15, video_tick)
 
 
 def start_video():
@@ -106,7 +109,6 @@ def start_video():
     video_started = True
     thread.Thread(target=get_FPS, daemon=True).start()
     thread.Thread(target=video_thread, daemon=True).start()
-    thread.Thread(target=opencv_r, daemon=True).start()
 
 ########>>>>>VIDEO<<<<<########
 
@@ -350,6 +352,7 @@ def loop():                      #GUI
     send_status = tk.Label(root, width=62, text='', fg=color_text, bg='#212121', anchor='w')
     send_status.place(x=30, y=450)                    #Last send result
 
+    root.after(0, video_tick)                         #Frame drawing runs on the Tk thread
     root.mainloop()  # Run the mainloop()
 
 
