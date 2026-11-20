@@ -497,9 +497,9 @@ async def recv_msg(websocket):
                 err = int(data.split()[1])
                 flask_app.camera.errorSet(err)
 
-        elif(isinstance(data,dict)):
-            print("i am isinstance(data,dict)", data, dict)
+        elif(isinstance(data,dict)):            
             if data['title'] == "prompt":
+                print("i am a prompt")
                 from webserver.app import PROMPTS
                 import llm
                 text = str(data['data']).strip()

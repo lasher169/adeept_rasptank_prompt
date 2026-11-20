@@ -6,3 +6,6 @@ __pycache__/
 # Local scratch / per-machine files, not part of the repo
 ip.txt
 tests/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
