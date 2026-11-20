@@ -30,6 +30,23 @@ findLineError = 20
 colorUpper = np.array([44, 255, 255])
 colorLower = np.array([24, 100, 100])
 
+
+def _distance_text():
+    """Forward ultrasonic range as a log field.
+
+    The HC-SR04 sits on the same bracket as the camera, so it measures the
+    thing in front of the lens. Returns 'n/a' when the sensor does not answer.
+    """
+    try:
+        import ultra
+        metres = ultra.checkdist_timeout()
+    except Exception as exc:
+        return 'n/a (%s)' % exc
+    if metres is None:
+        return 'n/a (no echo)'
+    return '%.2fm' % metres
+
+
 class CVThread(threading.Thread):
     font = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -183,9 +200,9 @@ class CVThread(threading.Thread):
             self.lastMovtionCaptured = timestamp
             if (timestamp - self.lastPrint).total_seconds() >= 1.0:
                 self.lastPrint = timestamp
-                print('object detected: box=(%d,%d) %dx%d area=%d'
+                print('object detected: box=(%d,%d) %dx%d area=%d distance=%s'
                       % (self.mov_x, self.mov_y, self.mov_w, self.mov_h,
-                         cv2.contourArea(c)))
+                         cv2.contourArea(c), _distance_text()))
             led.setColor(255,78,0)
             # switch.switch(1,1)
             # switch.switch(2,1)

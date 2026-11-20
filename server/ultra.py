@@ -32,6 +32,30 @@ def checkdist():       #Reading distance
     return round((t2-t1)*340/2,2)
     #return (t2-t1)*340/2
 
+
+def checkdist_timeout(timeout=0.05):
+    """Like checkdist(), but returns None instead of blocking forever.
+
+    checkdist() spins on the echo pin with no bound, so a missing or
+    unpowered sensor hangs the caller. Callers that must not stall use this.
+    """
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(Tr, GPIO.OUT, initial=GPIO.LOW)
+    GPIO.setup(Ec, GPIO.IN)
+    GPIO.output(Tr, GPIO.HIGH)
+    time.sleep(0.000015)
+    GPIO.output(Tr, GPIO.LOW)
+    deadline = time.time() + timeout
+    while not GPIO.input(Ec):
+        if time.time() > deadline:
+            return None
+    t1 = time.time()
+    while GPIO.input(Ec):
+        if time.time() > deadline:
+            return None
+    t2 = time.time()
+    return round((t2-t1)*340/2, 2)
+
 # def checkdist():       #Reading distance
 #     GPIO.output(Tr, GPIO.HIGH)
 #     time.sleep(0.000015)
