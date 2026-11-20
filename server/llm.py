@@ -70,7 +70,7 @@ def ask(prompt, system=None, timeout=30):
         'messages': messages,
         'tools': registry.get_schemas(),}).encode()
     
-    print(json.dumps(body, indent=4))
+    print(body)
     
     req = urllib.request.Request(
         base + '/chat/completions',
