@@ -6,7 +6,6 @@
 # Author      : William
 # Date        : 2018/08/22
 #
-import base64
 import json
 import os
 import threading as thread
@@ -17,12 +16,11 @@ from socket import *
 
 import cv2
 import numpy as np
-import zmq
 from websockets.sync.client import connect as ws_connect
 
 DEFAULT_PORT = int(os.environ.get('WEB_PORT', 8888))  # server/webserver /prompt
 INFO_PORT = 2256                                     # CPU/RAM feed from the robot
-VIDEO_PORT = 5555                                    # FPV feed from the robot
+VIDEO_PORT = int(os.environ.get('VIDEO_PORT', 5000))  # MJPEG feed from server/app.py
 
 BUFSIZ = 1024
 INFO_INTERVAL = 3         # seconds between CPU/RAM polls
@@ -34,16 +32,40 @@ ws_lock = thread.Lock()   # the websockets sync client is not safe for concurren
 
 ########>>>>>VIDEO<<<<<########
 
-def video_thread():
-    global footage_socket, font, frame_num, fps
-    context = zmq.Context()
-    footage_socket = context.socket(zmq.SUB)
-    footage_socket.bind('tcp://*:%d' % VIDEO_PORT)
-    footage_socket.setsockopt_string(zmq.SUBSCRIBE, '')
+latest_frame = None
+video_started = False
 
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    frame_num = 0
-    fps = 0
+
+def mjpeg_frames(url):
+    """Yield JPEG bytes from a multipart/x-mixed-replace stream."""
+    stream = urllib.request.urlopen(url, timeout=10)
+    buf = b''
+    while True:
+        chunk = stream.read(4096)
+        if not chunk:
+            return
+        buf += chunk
+        while True:
+            start = buf.find(b'\xff\xd8')
+            end = buf.find(b'\xff\xd9', start + 2) if start != -1 else -1
+            if start == -1 or end == -1:
+                break
+            yield buf[start:end + 2]
+            buf = buf[end + 2:]
+
+
+def video_thread():
+    """Pull the MJPEG feed that server/app.py serves on /video_feed."""
+    global latest_frame
+    url = 'http://%s:%d/video_feed' % (robot_ip(), VIDEO_PORT)
+    while True:
+        try:
+            for jpeg in mjpeg_frames(url):
+                latest_frame = jpeg
+        except Exception as exc:
+            print('Video stream failed: %s' % exc)
+            time.sleep(1)
+
 
 def get_FPS():
     global frame_num, fps
@@ -52,29 +74,39 @@ def get_FPS():
         fps = frame_num
         frame_num = 0
 
+
 def opencv_r():
     global frame_num
     while True:
+        frame = latest_frame
+        if frame is None:
+            time.sleep(0.05)
+            continue
+        npimg = np.frombuffer(frame, dtype=np.uint8)
+        source = cv2.imdecode(npimg, 1)
+        if source is None:
+            time.sleep(0.05)
+            continue
+        cv2.putText(source, ('PC FPS: %s' % fps), (40, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
         try:
-            frame = footage_socket.recv_string()
-            npimg = np.frombuffer(base64.b64decode(frame), dtype=np.uint8)
-            source = cv2.imdecode(npimg, 1)
-            cv2.putText(source, ('PC FPS: %s' % fps), (40, 20), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-            try:
-                cv2.putText(source, ('CPU Temperature: %s' % CPU_TEP), (370, 350), font, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
-                cv2.putText(source, ('CPU Usage: %s' % CPU_USE), (370, 380), font, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
-                cv2.putText(source, ('RAM Usage: %s' % RAM_USE), (370, 410), font, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
-            except NameError:
-                pass
-            cv2.imshow("Stream", source)
-            frame_num += 1
-            cv2.waitKey(1)
-        except Exception:
-            time.sleep(0.5)
-            break
+            cv2.putText(source, ('CPU Temperature: %s' % CPU_TEP), (370, 350), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
+            cv2.putText(source, ('CPU Usage: %s' % CPU_USE), (370, 380), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
+            cv2.putText(source, ('RAM Usage: %s' % RAM_USE), (370, 410), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 255, 128), 1, cv2.LINE_AA)
+        except NameError:
+            pass
+        cv2.imshow("Stream", source)
+        frame_num += 1
+        cv2.waitKey(1)
 
-thread.Thread(target=get_FPS, daemon=True).start()
-thread.Thread(target=video_thread, daemon=True).start()
+
+def start_video():
+    global video_started
+    if video_started:
+        return
+    video_started = True
+    thread.Thread(target=get_FPS, daemon=True).start()
+    thread.Thread(target=video_thread, daemon=True).start()
+    thread.Thread(target=opencv_r, daemon=True).start()
 
 ########>>>>>VIDEO<<<<<########
 
@@ -208,6 +240,7 @@ def socket_connect():     #Call this function to connect with the server
     ip_stu = 0
 
     thread.Thread(target=Info_receive, daemon=True).start()
+    start_video()
     if os.environ.get('GUI_INFO_LISTEN'):
         thread.Thread(target=Info_push_listener, daemon=True).start()
 
