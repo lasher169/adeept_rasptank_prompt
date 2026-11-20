@@ -506,15 +506,11 @@ async def recv_msg(websocket):
                 PROMPTS.append(text)
                 response['title'] = 'prompt'
                 try:
-                    llm_response = await asyncio.to_thread(llm.ask(text))
-                    print(json.dumps(llm_response, indent=4)) 
-                    name = llm_response["function"]["name"]
-                    arguments = llm_response["function"]["arguments"]
-                    
-                    print(f"total_Calls{name}, arguments{arguments}")
+                    response['data'] = await asyncio.to_thread(llm.ask, text)
                 except RuntimeError as exc:
                     response['status'] = 'error'
                     response['data'] = str(exc)
+                print('prompt response data: %s' % response['data'])
             elif data['title'] == "findColorSet":
                 color = data['data']
                 flask_app.colorFindSet(color[0],color[1],color[2])

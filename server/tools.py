@@ -16,9 +16,11 @@ except ImportError:        # imported as a package module
 # the registry can be imported off the Pi, where GPIO/picamera are missing.
 try:
     import move
-    from camera_opencv import Camera
 except ImportError:
     move = None
+try:
+    from camera_opencv import Camera
+except ImportError:
     Camera = None
 
 DIRECTIONS = ("forward", "backward", "no")
