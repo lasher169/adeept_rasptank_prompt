@@ -72,6 +72,8 @@ def ask(prompt, system=None, timeout=30):
         headers={'Content-Type': 'application/json','Authorization': 'Bearer ' + key},
     ) 
 
+    print("sending this ",req)
+
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode())
