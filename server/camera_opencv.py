@@ -19,8 +19,31 @@ pid.SetKp(0.5)
 pid.SetKd(0)
 pid.SetKi(0)
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _env_float(name, default):
+    """Read a float from the environment, falling back to the repo-root .env."""
+    raw = os.environ.get(name)
+    if raw is None:
+        try:
+            with open(os.path.join(ROOT, '.env')) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line.startswith(name + '='):
+                        raw = line.split('=', 1)[1].strip().strip("'\"")
+                        break
+        except OSError:
+            pass
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 CVRun = 1
 FLIP_180 = True          # camera is mounted upside down in the chassis
+DISTANCE_TO_STOP = _env_float('DISTANCE_TO_STOP', 0.30)   # metres
 linePos_1 = 440
 linePos_2 = 380
 lineColorSet = 255
@@ -31,19 +54,24 @@ colorUpper = np.array([44, 255, 255])
 colorLower = np.array([24, 100, 100])
 
 
-def _distance_text():
-    """Forward ultrasonic range as a log field.
+def _distance():
+    """(metres, note) from the forward ultrasonic sensor.
 
-    The HC-SR04 sits on the same bracket as the camera, so it measures the
-    thing in front of the lens. Returns 'n/a' when the sensor does not answer.
+    metres is None when the sensor did not answer; note says why.
     """
     try:
         import ultra
         metres = ultra.checkdist_timeout()
     except Exception as exc:
-        return 'n/a (%s)' % exc
+        return None, str(exc)
     if metres is None:
-        return 'n/a (no echo)'
+        return None, 'no echo'
+    return metres, ''
+
+
+def _distance_text(metres, note):
+    if metres is None:
+        return 'n/a (%s)' % note
     return '%.2fm' % metres
 
 
@@ -200,9 +228,12 @@ class CVThread(threading.Thread):
             self.lastMovtionCaptured = timestamp
             if (timestamp - self.lastPrint).total_seconds() >= 1.0:
                 self.lastPrint = timestamp
+                metres, note = _distance()
+                if metres is not None and metres <= DISTANCE_TO_STOP:
+                    move.motorStop()
                 print('object detected: box=(%d,%d) %dx%d area=%d distance=%s'
                       % (self.mov_x, self.mov_y, self.mov_w, self.mov_h,
-                         cv2.contourArea(c), _distance_text()))
+                         cv2.contourArea(c), _distance_text(metres, note)))
             led.setColor(255,78,0)
             # switch.switch(1,1)
             # switch.switch(2,1)
