@@ -434,8 +434,7 @@ async def recv_msg(websocket):
         if not data:
             continue
 
-        if isinstance(data,str):
-            print("i am isinstance")
+        if isinstance(data,str):            
             robotCtrl(data, response)
 
             switchCtrl(data, response)
