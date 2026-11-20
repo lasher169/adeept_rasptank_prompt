@@ -38,6 +38,7 @@ def motorStop():#Motor stops
 	GPIO.output(Motor_B_Pin2, GPIO.LOW)
 	GPIO.output(Motor_A_EN, GPIO.LOW)
 	GPIO.output(Motor_B_EN, GPIO.LOW)
+	print("stopping motors")
 
 
 def setup():#Motor initialization
