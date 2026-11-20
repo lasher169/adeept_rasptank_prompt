@@ -45,6 +45,7 @@ def configured():
 
 
 def ask(prompt, system=None, timeout=30):
+    print("I am here on the ask side")
     """Send one prompt and return the reply text.
 
     Raises RuntimeError when the settings are missing or the call fails, so
