@@ -435,6 +435,7 @@ async def recv_msg(websocket):
             continue
 
         if isinstance(data,str):
+            print("i am isinstance")
             robotCtrl(data, response)
 
             switchCtrl(data, response)
@@ -455,6 +456,7 @@ async def recv_msg(websocket):
                     pass
 
             elif 'AR' == data:
+                print("i am AR")
                 modeSelect = 'AR'
                 screen.screen_show(4, 'ARM MODE ON')
                 try:
@@ -463,6 +465,7 @@ async def recv_msg(websocket):
                     pass
 
             elif 'PT' == data:
+                print("i am PT")
                 modeSelect = 'PT'
                 screen.screen_show(4, 'PT MODE ON')
                 try:
@@ -472,25 +475,31 @@ async def recv_msg(websocket):
 
             #CVFL
             elif 'CVFL' == data:
+                print("i am CVFL")
                 flask_app.modeselect('findlineCV')
 
             elif 'CVFLColorSet' in data:
+                print("i am CVFLColorSet")
                 color = int(data.split()[1])
                 flask_app.camera.colorSet(color)
 
             elif 'CVFLL1' in data:
+                print("i am CVFLL1")
                 pos = int(data.split()[1])
                 flask_app.camera.linePosSet_1(pos)
 
             elif 'CVFLL2' in data:
+                print("i am CVFLL2")
                 pos = int(data.split()[1])
                 flask_app.camera.linePosSet_2(pos)
 
             elif 'CVFLSP' in data:
+                print("i am CVFLSP")
                 err = int(data.split()[1])
                 flask_app.camera.errorSet(err)
 
         elif(isinstance(data,dict)):
+            print("i am isinstance(data,dict)")
             if data['title'] == "prompt":
                 from webserver.app import PROMPTS
                 import llm
