@@ -45,20 +45,8 @@ def configured():
     return all(_env(n) for n in ('LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL'))
 
 
-def run_tool_call(call):
-    """Run one tool call from the model and return a one-line result."""
-    fn = call.get('function', {})
-    name = fn.get('name', '')
-    try:
-        args = json.loads(fn.get('arguments') or '{}')
-        return str(registry.call(name, **args))
-    except Exception as exc:
-        return '%s failed: %s' % (name, exc)
-
-
 def ask(prompt, system=None, timeout=30):
-    """Send one prompt. Text replies are returned as text; tool calls the model
-    picks are run and their results returned.
+    """Send one prompt and return the reply text.
 
     Raises RuntimeError when the settings are missing or the call fails, so
     callers can show the message instead of a traceback.
@@ -66,6 +54,9 @@ def ask(prompt, system=None, timeout=30):
     base = _env('LLM_BASE_URL').rstrip('/')
     key = _env('LLM_API_KEY')
     model = _env('LLM_MODEL')
+    
+    print("do i have the following", base, key, model)
+    
     if not (base and key and model):
         raise RuntimeError('LLM_BASE_URL, LLM_API_KEY and LLM_MODEL must be set in .env')
 
@@ -75,32 +66,41 @@ def ask(prompt, system=None, timeout=30):
     messages.append({'role': 'user', 'content': prompt})
 
     body = json.dumps({
-        'model': model,
+        'model': model, 
         'messages': messages,
-        'tools': registry.get_schemas(),
-    }).encode()
+        'tools': registry.get_schemas(),}).encode()
+    
+    print("sending this",json.dumps(json.loads(body.decode()), indent=4))
+
+    
     req = urllib.request.Request(
         base + '/chat/completions',
         data=body,
-        headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
-    )
+        headers={'Content-Type': 'application/json','Authorization': 'Bearer ' + key},
+    ) 
 
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
+            print(json.dumps(payload, indent=4))
+    except urllib.error.HTTPError as exc:        
         detail = exc.read().decode('utf-8', 'replace')[:200]
+        print('LLM returned HTTP %d: %s' % (exc.code, detail))
         raise RuntimeError('LLM returned HTTP %d: %s' % (exc.code, detail)) from None
     except Exception as exc:
+        print('LLM call failed: %s' % exc)        
         raise RuntimeError('LLM call failed: %s' % exc) from None
 
     try:
         message = payload['choices'][0]['message']
+        print(json.dumps(message, indent=4))        
     except (KeyError, IndexError, TypeError):
         raise RuntimeError('unexpected LLM response: %s' % str(payload)[:200]) from None
     if message.get('tool_calls'):
-        return '\n'.join(run_tool_call(c) for c in message['tool_calls'])
-    return (message.get('content') or '').strip()
+        tool_calls = json.dumps(message['tool_calls'], indent=2)
+        print(json.dumps(message, indent=4))        
+        return tool_calls
+    return json.dumps(message, indent=2)
 
 
 if __name__ == '__main__':
