@@ -88,6 +88,7 @@ class CVThread(threading.Thread):
         self.avg = None
         self.motionCounter = 0
         self.lastMovtionCaptured = datetime.datetime.now()
+        self.lastPrint = datetime.datetime(2000, 1, 1)
         self.frameDelta = None
         self.thresh = None
         self.cnts = None
@@ -180,6 +181,11 @@ class CVThread(threading.Thread):
             #print(motionCounter)
             #print(text)
             self.lastMovtionCaptured = timestamp
+            if (timestamp - self.lastPrint).total_seconds() >= 1.0:
+                self.lastPrint = timestamp
+                print('object detected: box=(%d,%d) %dx%d area=%d'
+                      % (self.mov_x, self.mov_y, self.mov_w, self.mov_h,
+                         cv2.contourArea(c)))
             led.setColor(255,78,0)
             # switch.switch(1,1)
             # switch.switch(2,1)
@@ -352,10 +358,10 @@ class CVThread(threading.Thread):
 
 class Camera(BaseCamera):
     video_source = 0
-    modeSelect = 'none'
+    modeSelect = 'watchDog'
+    # modeSelect = 'none'
     # modeSelect = 'findlineCV'
     # modeSelect = 'findColor'
-    # modeSelect = 'watchDog'
 
 
     def __init__(self):
