@@ -19,6 +19,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from tools import registry
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -45,7 +46,6 @@ def configured():
 
 
 def ask(prompt, system=None, timeout=30):
-    print("I am here on the ask side")
     """Send one prompt and return the reply text.
 
     Raises RuntimeError when the settings are missing or the call fails, so
@@ -62,13 +62,15 @@ def ask(prompt, system=None, timeout=30):
         messages.append({'role': 'system', 'content': system})
     messages.append({'role': 'user', 'content': prompt})
 
-    body = json.dumps({'model': model, 'messages': messages}).encode()
+    body = json.dumps({
+        'model': model, 
+        'messages': messages,
+        'tools': registry.get_schemas(),}).encode()
     req = urllib.request.Request(
         base + '/chat/completions',
         data=body,
-        headers={'Content-Type': 'application/json',
-                 'Authorization': 'Bearer ' + key},
-    )
+        headers={'Content-Type': 'application/json','Authorization': 'Bearer ' + key},
+    ) 
 
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -80,9 +82,14 @@ def ask(prompt, system=None, timeout=30):
         raise RuntimeError('LLM call failed: %s' % exc) from None
 
     try:
-        return payload['choices'][0]['message']['content'].strip()
+        message = payload['choices'][0]['message']
     except (KeyError, IndexError, TypeError):
         raise RuntimeError('unexpected LLM response: %s' % str(payload)[:200]) from None
+    if message.get('content'):
+        return message['content'].strip()
+    if message.get('tool_calls'):
+        return json.dumps(message['tool_calls'], indent=2)
+    return json.dumps(message, indent=2)
 
 
 if __name__ == '__main__':
