@@ -490,9 +490,6 @@ async def recv_msg(websocket):
                 err = int(data.split()[1])
                 flask_app.camera.errorSet(err)
 
-            elif 'defEC' in data:#Z
-                fpv.defaultExpCom()
-
         elif(isinstance(data,dict)):
             if data['title'] == "prompt":
                 from webserver.app import PROMPTS
