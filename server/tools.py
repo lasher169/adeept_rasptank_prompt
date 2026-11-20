@@ -27,37 +27,35 @@ CAMERA_MODES = ("none", "watchDog", "findColor", "findlineCV")
 
 
 @registry.register
-def start_moving_and_start_camera(
+def start_moving(
     direction: str, 
     turn: str = "no",
-    speed: int = 100,
-    camera_mode: str = "watchDog") -> str:
-    """Drive the tank and turn the camera's vision loop on.
+    speed: int = 100) -> str:
+    """Drive the tank 
 
     direction: forward | backward | no
     turn:      no | left | right
     speed:     0-100
-    camera_mode: none | watchDog | findColor | findlineCV
     """
-    if direction not in DIRECTIONS:
-        raise ValueError(f"direction must be one of {DIRECTIONS}, got {direction!r}")
-    if turn not in TURNS:
-        raise ValueError(f"turn must be one of {TURNS}, got {turn!r}")
-    if camera_mode not in CAMERA_MODES:
-        raise ValueError(f"camera_mode must be one of {CAMERA_MODES}, got {camera_mode!r}")
-    if move is None:
-        raise RuntimeError("move.py is not importable; run from the server/ directory")
+    # if direction not in DIRECTIONS:
+    #     raise ValueError(f"direction must be one of {DIRECTIONS}, got {direction!r}")
+    # if turn not in TURNS:
+    #     raise ValueError(f"turn must be one of {TURNS}, got {turn!r}")
+    # if camera_mode not in CAMERA_MODES:
+    #     raise ValueError(f"camera_mode must be one of {CAMERA_MODES}, got {camera_mode!r}")
+    # if move is None:
+    #     raise RuntimeError("move.py is not importable; run from the server/ directory")
 
     move.setup()
     move.move(int(speed), direction, turn, 0.6)
 
-    if Camera is None:
-        camera_state = "camera unavailable"
-    else:
-        Camera.modeSelect = camera_mode
-        camera_state = f"camera mode {camera_mode}"
+    # if Camera is None:
+    #     camera_state = "camera unavailable"
+    # else:
+    #     Camera.modeSelect = camera_mode
+    #     camera_state = f"camera mode {camera_mode}"
 
-    return f"moving {direction} turn {turn} at {speed}; {camera_state}"
+    return f"moving {direction} turn {turn} at {speed}; "
 
 
 if __name__ == "__main__":
