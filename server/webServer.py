@@ -506,7 +506,11 @@ async def recv_msg(websocket):
                 PROMPTS.append(text)
                 response['title'] = 'prompt'
                 try:
-                    response['data'] = await asyncio.to_thread(llm.ask(text))
+                    response = await asyncio.to_thread(llm.ask(text))
+                    tool_calls = response["choices"][0]["message"]["tool_calls"]["function"]["name"]
+                    arguments = response["choices"][0]["message"]["tool_calls"]["function"]["arguments"]
+                    
+                    print(f"total_Calls{tool_calls}, arguments{arguments}")
                 except RuntimeError as exc:
                     response['status'] = 'error'
                     response['data'] = str(exc)
