@@ -498,7 +498,7 @@ async def recv_msg(websocket):
                 flask_app.camera.errorSet(err)
 
         elif(isinstance(data,dict)):
-            print("i am isinstance(data,dict)")
+            print("i am isinstance(data,dict)", data, dict)
             if data['title'] == "prompt":
                 from webserver.app import PROMPTS
                 import llm
@@ -506,7 +506,7 @@ async def recv_msg(websocket):
                 PROMPTS.append(text)
                 response['title'] = 'prompt'
                 try:
-                    response['data'] = await asyncio.to_thread(llm.ask, text)
+                    response['data'] = await asyncio.to_thread(llm.ask(text))
                 except RuntimeError as exc:
                     response['status'] = 'error'
                     response['data'] = str(exc)
