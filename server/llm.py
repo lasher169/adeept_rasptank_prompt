@@ -93,6 +93,7 @@ def ask(prompt, system=None, timeout=30):
 
     try:
         message = payload['choices'][0]['message']
+        print("what is the message", message)
     except (KeyError, IndexError, TypeError):
         raise RuntimeError('unexpected LLM response: %s' % str(payload)[:200]) from None
     if message.get('tool_calls'):
