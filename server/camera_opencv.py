@@ -230,10 +230,11 @@ class CVThread(threading.Thread):
                 self.lastPrint = timestamp
                 metres, note = _distance()
                 if metres is not None and metres <= DISTANCE_TO_STOP:
+                    print('object detected: box=(%d,%d) %dx%d area=%d distance=%s'
+                                          % (self.mov_x, self.mov_y, self.mov_w, self.mov_h,
+                                             cv2.contourArea(c), _distance_text(metres, note)))
                     move.motorStop()
-                print('object detected: box=(%d,%d) %dx%d area=%d distance=%s'
-                      % (self.mov_x, self.mov_y, self.mov_w, self.mov_h,
-                         cv2.contourArea(c), _distance_text(metres, note)))
+                
             led.setColor(255,78,0)
             # switch.switch(1,1)
             # switch.switch(2,1)
