@@ -20,6 +20,7 @@ pid.SetKd(0)
 pid.SetKi(0)
 
 CVRun = 1
+FLIP_180 = True          # camera is mounted upside down in the chassis
 linePos_1 = 440
 linePos_2 = 380
 lineColorSet = 255
@@ -450,6 +451,12 @@ class Camera(BaseCamera):
             if img is None or img.size == 0:
                 time.sleep(0.05)
                 continue
+
+            # The CSI module sits upside down in the RaspTank chassis, so the
+            # sensor hands back an inverted picture. Rotate before anything
+            # else so detection coordinates match what the operator sees.
+            if FLIP_180:
+                img = cv2.rotate(img, cv2.ROTATE_180)
 
             if Camera.modeSelect == 'none':
                 switch.switch(1,0)
