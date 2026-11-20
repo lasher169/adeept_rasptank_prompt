@@ -46,7 +46,6 @@ def configured():
 
 
 def ask(prompt, system=None, timeout=30):
-    print("i am in ask")
     """Send one prompt and return the reply text.
 
     Raises RuntimeError when the settings are missing or the call fails, so
@@ -55,6 +54,9 @@ def ask(prompt, system=None, timeout=30):
     base = _env('LLM_BASE_URL').rstrip('/')
     key = _env('LLM_API_KEY')
     model = _env('LLM_MODEL')
+    
+    print("do i have the following", base, key, model)
+    
     if not (base and key and model):
         raise RuntimeError('LLM_BASE_URL, LLM_API_KEY and LLM_MODEL must be set in .env')
 
