@@ -493,9 +493,15 @@ async def recv_msg(websocket):
         elif(isinstance(data,dict)):
             if data['title'] == "prompt":
                 from webserver.app import PROMPTS
-                PROMPTS.append(str(data['data']).strip())
+                import llm
+                text = str(data['data']).strip()
+                PROMPTS.append(text)
                 response['title'] = 'prompt'
-                response['data'] = len(PROMPTS)
+                try:
+                    response['data'] = await asyncio.to_thread(llm.ask, text)
+                except RuntimeError as exc:
+                    response['status'] = 'error'
+                    response['data'] = str(exc)
             elif data['title'] == "findColorSet":
                 color = data['data']
                 flask_app.colorFindSet(color[0],color[1],color[2])
