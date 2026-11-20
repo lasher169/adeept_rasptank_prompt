@@ -69,6 +69,9 @@ def ask(prompt, system=None, timeout=30):
         'model': model, 
         'messages': messages,
         'tools': registry.get_schemas(),}).encode()
+    
+    print(json.dumps(body, indent=4))
+    
     req = urllib.request.Request(
         base + '/chat/completions',
         data=body,
