@@ -97,7 +97,9 @@ def ask(prompt, system=None, timeout=30):
     except (KeyError, IndexError, TypeError):
         raise RuntimeError('unexpected LLM response: %s' % str(payload)[:200]) from None
     if message.get('tool_calls'):
-        return json.dumps(message['tool_calls'], indent=2)
+        tool_calls = json.dumps(message['tool_calls'], indent=2)
+        print(json.dumps(tool_calls, indent=4))        
+        return tool_calls
     return json.dumps(message, indent=2)
 
 
