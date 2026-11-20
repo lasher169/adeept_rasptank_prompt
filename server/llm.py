@@ -80,7 +80,7 @@ def ask(prompt, system=None, timeout=30):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode())
-            print("response", payload)
+            print(json.dumps(payload, indent=4))
     except urllib.error.HTTPError as exc:        
         detail = exc.read().decode('utf-8', 'replace')[:200]
         print('LLM returned HTTP %d: %s' % (exc.code, detail))
