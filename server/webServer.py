@@ -1,607 +1,240 @@
-#!/usr/bin/env/python
-# File name   : server.py
-# Production  : GWR
-# Website     : www.adeept.com
-# Author      : William
-# Date        : 2020/03/17
+#!/usr/bin/env python3
+"""RaspTank entry point.
 
-import time
-import threading
-import move
-import Adafruit_PCA9685
-import os
-import info
-import RPIservo
+One process, two servers:
+  - Flask (webserver/app.py)  : FPV video, static front-end, /health, /prompt
+  - WebSocket (this file)     : the joystick/serial-control commands the UI sends
 
-import functions
-import robotLight
-import switch
-import socket
+Run:  python3 webServer.py
+The WebSocket port is 8000; set WS_PASSWORD to require the "admin" handshake.
 
-#websocket
+Commands the front-end can send (all JSON):
+  wsA/wsB  P_servo/T_servo + angle        aim the two camera servos
+  wsC      PWMD/SiLeft/SiRight/SiDown     nudge a servo zero
+  wsD      PWMINIT/P_servo                save a servo zero (calibration.json)
+  wsE      mode                           camera mode: none|watchDog|findColor|findlineCV
+  wsF      H,S,V                          colour target for findColor
+  wsG      automatic/trackLine/none       autonomous mode
+  wsK      'yes'|'no'                    radar scan
+  wsM      direction, turn, speed         drive
+  wsN      'on'|'off'                    NeoPixel
+  wsO      mode, port                     HAT port 1-3 on/off
+  wsP      'yes'|'no'                    stop everything
+  wsQ      1|2|3|4                        ultrasonic which sensor
+  wsR      'yes'|'no'                    report distance
+  wsS      'yes'|'no'                    report IP
+  wsT      initPos, goalPos, autoTime, scSpeed, initAngle, goalAngle   raw servo move
+  wsU      0/1 cameraDiagonalW/H, CameraMode, findColorSet
+  wsV      'yes'|'no'                    print current servo positions
+  wsW      mode                           camera mode (serial-control path)
+  wsX      'yes'                          ultrasonic distance
+  wsY      'yes'                         what revision is running (no self-overwrite)
+  wsZ      'yes'|'no'                    reset camera/servo state
+  prompt   text                           send to the LLM agent
+"""
+
+from __future__ import annotations
+
 import asyncio
+import json
+import socket
+import sys
+import threading
+import time
+
 import websockets
 
-import json
-import app
+import info
+import move
+import RPIservo
+import robotLight
+import switch
+from calibration import load, set as set_zero, get as get_zero
 
-# WS_DEBUG=1 turns on per-message logging. Off by default so the GUI's 3s
-# 'get_info' health poll does not flood the console.
-DEBUG = bool(os.environ.get('WS_DEBUG'))
+from webserver import tools  # noqa: F401 - importing registers the agent tools
+from webserver.app import camera, set_camera_mode, set_color_find, start
+from webserver.config import env
+from webserver.prompts import submit
 
-OLED_connection = 1
-try:
-    import OLED
-    if OLED.device is None:
-        raise RuntimeError('no OLED on i2c bus 1')
-    screen = OLED.OLED_ctrl()
-    screen.start()
-    screen.screen_show(1, 'ADEEPT.COM')
-except:
-    OLED_connection = 0
-    print('OLED disconnected')
-    pass
+import camera_opencv
+import functions
 
-functionMode = 0
-speed_set = 100
-rad = 0.5
-turnWiggle = 60
+WS_PORT = int(env("WS_PORT", 8000))
+WS_PASSWORD = env("WS_PASSWORD", "123456")
 
-scGear = RPIservo.ServoCtrl()
-scGear.moveInit()
-
-P_sc = RPIservo.ServoCtrl()
-P_sc.start()
-
-T_sc = RPIservo.ServoCtrl()
-T_sc.start()
-
-H1_sc = RPIservo.ServoCtrl()
-H1_sc.start()
-
-H2_sc = RPIservo.ServoCtrl()
-H2_sc.start()
-
-G_sc = RPIservo.ServoCtrl()
-G_sc.start()
-
-# modeSelect = 'none'
-modeSelect = 'PT'
-
-init_pwm0 = scGear.initPos[0]
-init_pwm1 = scGear.initPos[1]
-init_pwm2 = scGear.initPos[2]
-init_pwm3 = scGear.initPos[3]
-init_pwm4 = scGear.initPos[4]
-
+servo = RPIservo.servo()
+RL = robotLight.RobotLight()
+RL.start()
 fuc = functions.Functions()
 fuc.start()
 
-curpath = os.path.realpath(__file__)
-thisPath = "/" + os.path.dirname(curpath)
-
-direction_command = 'no'
-turn_command = 'no'
-
-def servoPosInit():
-    scGear.initConfig(0,init_pwm0,1)
-    P_sc.initConfig(1,init_pwm1,1)
-    T_sc.initConfig(2,init_pwm2,1)
-    H_sc.initConfig(3,init_pwm3,1)
-    G_sc.initConfig(4,init_pwm4,1)
-
-
-def replace_num(initial,new_num):   #Call this function to replace data in '.txt' file
-    global r
-    newline=""
-    str_num=str(new_num)
-    with open(thisPath+"/RPIservo.py","r") as f:
-        for line in f.readlines():
-            if(line.find(initial) == 0):
-                line = initial+"%s" %(str_num+"\n")
-            newline += line
-    with open(thisPath+"/RPIservo.py","w") as f:
-        f.writelines(newline)
-
-
-def FPV_thread():
-    global fpv
-    fpv=FPV.FPV()
-    fpv.capture_thread(addr[0])
-
-
-def ap_thread():
-    os.system("sudo create_ap wlan0 eth0 Adeept 12345678")
-
-
-def functionSelect(command_input, response):
-    global functionMode
-    if 'scan' == command_input:
-        if OLED_connection:
-            screen.screen_show(5,'SCANNING')
-        if modeSelect == 'PT':
-            radar_send = fuc.radarScan()
-            print(radar_send)
-            response['title'] = 'scanResult'
-            response['data'] = radar_send
-            time.sleep(0.3)
-
-    elif 'findColor' == command_input:
-        if OLED_connection:
-            screen.screen_show(5,'FindColor')
-        if modeSelect == 'PT':
-            flask_app.modeselect('findColor')
-
-    elif 'motionGet' == command_input:
-        if OLED_connection:
-            screen.screen_show(5,'MotionGet')
-        flask_app.modeselect('watchDog')
-
-    elif 'stopCV' == command_input:
-        flask_app.modeselect('none')
-        switch.switch(1,0)
-        switch.switch(2,0)
-        switch.switch(3,0)
-
-    elif 'police' == command_input:
-        if OLED_connection:
-            screen.screen_show(5,'POLICE')
-        RL.police()
-
-    elif 'policeOff' == command_input:
-        RL.pause()
-        move.motorStop()
-
-    elif 'automatic' == command_input:
-        if OLED_connection:
-            screen.screen_show(5,'Automatic')
-        if modeSelect == 'PT':
-            fuc.automatic()
-        else:
-            fuc.pause()
-
-    elif 'automaticOff' == command_input:
-        fuc.pause()
-        move.motorStop()
-
-    elif 'trackLine' == command_input:
-        fuc.trackLine()
-        if OLED_connection:
-            screen.screen_show(5,'TrackLine')
-
-    elif 'trackLineOff' == command_input:
-        fuc.pause()
-        move.motorStop()
-
-    elif 'steadyCamera' == command_input:
-        if OLED_connection:
-            screen.screen_show(5,'SteadyCamera')
-        fuc.steady(T_sc.lastPos[2])
-
-    elif 'steadyCameraOff' == command_input:
-        fuc.pause()
-        move.motorStop()
-
-
-def switchCtrl(command_input, response):
-    if 'Switch_1_on' in command_input:
-        switch.switch(1,1)
-
-    elif 'Switch_1_off' in command_input:
-        switch.switch(1,0)
-
-    elif 'Switch_2_on' in command_input:
-        switch.switch(2,1)
-
-    elif 'Switch_2_off' in command_input:
-        switch.switch(2,0)
-
-    elif 'Switch_3_on' in command_input:
-        switch.switch(3,1)
-
-    elif 'Switch_3_off' in command_input:
-        switch.switch(3,0) 
-
-
-def robotCtrl(command_input, response):
-    global direction_command, turn_command
-    if 'forward' == command_input:
-        direction_command = 'forward'
-        move.move(speed_set, 'forward', 'no', rad)
-    
-    elif 'backward' == command_input:
-        direction_command = 'backward'
-        move.move(speed_set, 'backward', 'no', rad)
-
-    elif 'DS' in command_input:
-        direction_command = 'no'
-        if turn_command == 'no':
-            move.move(speed_set, 'no', 'no', rad)
-
-
-    elif 'left' == command_input:
-        turn_command = 'left'
-        move.move(speed_set, 'no', 'left', rad)
-
-    elif 'right' == command_input:
-        turn_command = 'right'
-        move.move(speed_set, 'no', 'right', rad)
-
-    elif 'TS' in command_input:
-        turn_command = 'no'
-        if direction_command == 'no':
-            move.move(speed_set, 'no', 'no', rad)
-        else:
-            move.move(speed_set, direction_command, 'no', rad)
-
-
-    elif 'lookleft' == command_input:
-        P_sc.singleServo(14, -1, 3)
-
-    elif 'lookright' == command_input:
-        P_sc.singleServo(14, 1, 3)
-
-    elif 'LRstop' in command_input:
-        P_sc.stopWiggle()
-
-
-    elif 'up' == command_input:
-        T_sc.singleServo(11, -1, 3)
-
-    elif 'down' == command_input:
-        T_sc.singleServo(11, 1, 3)
-
-    elif 'UDstop' in command_input:
-        T_sc.stopWiggle()
-
-
-    elif 'handup' == command_input:
-        H1_sc.singleServo(12, 1, 7)
-        H2_sc.singleServo(13, 1, 7)
-
-    elif 'handdown' == command_input:
-        H1_sc.singleServo(12, -1, 7)
-        H2_sc.singleServo(13, -1, 7)
-
-    elif 'HAstop' in command_input:
-        H1_sc.stopWiggle()
-        H2_sc.stopWiggle()
-
-
-    elif 'grab' == command_input:
-        G_sc.singleServo(15, 1, 3)
-
-    elif 'loose' == command_input:
-        G_sc.singleServo(15, -1, 3)
-
-    elif 'stop' == command_input:
-        G_sc.stopWiggle()
-
-    elif 'home' == command_input:
-        P_sc.moveServoInit([11])
-        T_sc.moveServoInit([14])
-        H1_sc.moveServoInit([12])
-        H2_sc.moveServoInit([13])
-        G_sc.moveServoInit([15])
-
-
-def configPWM(command_input, response):
-    global init_pwm0, init_pwm1, init_pwm2, init_pwm3, init_pwm4
-    if 'SiLeft' == command_input:
-        init_pwm0 += 1
-        scGear.setPWM(0,init_pwm0)
-    elif 'SiRight' == command_input:
-        init_pwm0 -= 1
-        scGear.setPWM(0,-init_pwm0)
-    elif 'PWM0MS' == command_input:
-        scGear.initConfig(0,init_pwm0,1)
-        replace_num('init_pwm0 = ', init_pwm0)
-
-    elif 'PWM1MS' == command_input:
-        init_pwm1 = P_sc.lastPos[1]
-        P_sc.initConfig(1,P_sc.lastPos[1],1)
-        replace_num('init_pwm1 = ', P_sc.lastPos[1])
-
-    elif 'PWM2MS' == command_input:
-        init_pwm2 = T_sc.lastPos[2]
-        T_sc.initConfig(2,T_sc.lastPos[2],1)
-        print('LLLLLS',T_sc.lastPos[2])
-        replace_num('init_pwm2 = ', T_sc.lastPos[2])
-
-    elif 'PWM3MS' == command_input:
-        init_pwm3 = H_sc.lastPos[3]
-        H_sc.initConfig(3,H_sc.lastPos[3],1)
-        replace_num('init_pwm3 = ', H_sc.lastPos[3])
-
-    elif 'PWM4MS' == command_input:
-        init_pwm4 = G_sc.lastPos[4]
-        G_sc.initConfig(4,G_sc.lastPos[4],1)
-        replace_num('init_pwm4 = ', G_sc.lastPos[4])
-
-    elif 'PWMINIT' == command_input:
-        print(init_pwm1)
-        servoPosInit()
-
-    elif 'PWMD' == command_input:
-        init_pwm0,init_pwm1,init_pwm2,init_pwm3,init_pwm4=300,300,300,300,300
-        scGear.initConfig(0,init_pwm0,1)
-        replace_num('init_pwm0 = ', 300)
-
-        P_sc.initConfig(1,300,1)
-        replace_num('init_pwm1 = ', 300)
-
-        T_sc.initConfig(2,300,1)
-        replace_num('init_pwm2 = ', 300)
-
-        H_sc.initConfig(3,300,1)
-        replace_num('init_pwm3 = ', 300)
-
-        G_sc.initConfig(4,300,1)
-        replace_num('init_pwm4 = ', 300)
-
-def update_code():
-    # Update local to be consistent with remote
-    projectPath = thisPath[:-7]
-    with open(f'{projectPath}/config.json', 'r') as f1:
-        config = json.load(f1)
-        if not config['production']:
-            print('Update code')
-            # Force overwriting local code
-            if os.system(f'cd {projectPath} && sudo git fetch --all && sudo git reset --hard origin/master && sudo git pull') == 0:
-                print('Update successfully')
-                print('Restarting...')
-                os.system('sudo reboot')
-        
-def wifi_check():
+try:
+    import OLED
+    screen = OLED.OLED_CTRL()
+    screen.show("Adeept Car")
+except ImportError:
+    screen = None
+except Exception as exc:
+    print("OLED unavailable:", exc)
+    screen = None
+
+
+def log(message: str) -> None:
+    print(message)
+    if screen:
+        screen.show(message[:16])
+
+
+def current_ip() -> str:
+    """Best-effort local IP, without opening a socket to the internet."""
     try:
-        s =socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-        s.connect(("1.1.1.1",80))
-        ipaddr_check=s.getsockname()[0]
-        s.close()
-        update_code()
-        if OLED_connection:
-            screen.screen_show(2, 'IP:'+ipaddr_check)
-            screen.screen_show(3, 'AP MODE OFF')
-    except:
-        ap_threading=threading.Thread(target=ap_thread)   #Define a thread for data receiving
-        ap_threading.setDaemon(True)                          #'True' means it is a front thread,it would close when the mainloop() closes
-        ap_threading.start()                                  #Thread starts
-        if OLED_connection:
-            screen.screen_show(2, 'AP Starting 10%')
-        RL.setColor(0,16,50)
-        time.sleep(1)
-        if OLED_connection:
-            screen.screen_show(2, 'AP Starting 30%')
-        RL.setColor(0,16,100)
-        time.sleep(1)
-        if OLED_connection:
-            screen.screen_show(2, 'AP Starting 50%')
-        RL.setColor(0,16,150)
-        time.sleep(1)
-        if OLED_connection:
-            screen.screen_show(2, 'AP Starting 70%')
-        RL.setColor(0,16,200)
-        time.sleep(1)
-        if OLED_connection:
-            screen.screen_show(2, 'AP Starting 90%')
-        RL.setColor(0,16,255)
-        time.sleep(1)
-        if OLED_connection:
-            screen.screen_show(2, 'AP Starting 100%')
-        RL.setColor(35,255,35)
-        if OLED_connection:
-            screen.screen_show(2, 'IP:192.168.12.1')
-            screen.screen_show(3, 'AP MODE ON')
-
-async def check_permit(websocket):
-    while True:
-        recv_str = await websocket.recv()
-        cred_dict = recv_str.split(":")
-        if cred_dict[0] == "admin" and cred_dict[1] == "123456":
-            response_str = "congratulation, you have connect with server\r\nnow, you can do something else"
-            await websocket.send(response_str)
-            return True
-        else:
-            response_str = "sorry, the username or password is wrong, please submit again"
-            await websocket.send(response_str)
-
-async def recv_msg(websocket):
-    global speed_set, modeSelect
-    move.setup()
-    direction_command = 'no'
-    turn_command = 'no'
-
-    while True: 
-        response = {
-            'status' : 'ok',
-            'title' : '',
-            'data' : None
-        }
-
-        data = ''
-        data = await websocket.recv()
-
-        # Plain-text commands (forward, DS, get_info, wsB 50...) are not JSON,
-        # so only try to parse messages that actually look like JSON.
-        if data.lstrip().startswith('{'):
-            try:
-                data = json.loads(data)
-            except Exception as e:
-                print('bad JSON: %s' % e)
-                continue
-            print('recv JSON: %s' % json.dumps(data, indent=2))
-
-        if not data:
-            continue
-
-        if isinstance(data,str):            
-            robotCtrl(data, response)
-
-            switchCtrl(data, response)
-
-            functionSelect(data, response)
-
-            configPWM(data, response)
-
-            if 'get_info' == data:
-                response['title'] = 'get_info'
-                response['data'] = [info.get_cpu_tempfunc(), info.get_cpu_use(), info.get_ram_info()]
-
-            if 'wsB' in data:
-                try:
-                    set_B=data.split()
-                    speed_set = int(set_B[1])
-                except:
-                    pass
-
-            elif 'AR' == data:
-                print("i am AR")
-                modeSelect = 'AR'
-                screen.screen_show(4, 'ARM MODE ON')
-                try:
-                    fpv.changeMode('ARM MODE ON')
-                except:
-                    pass
-
-            elif 'PT' == data:
-                print("i am PT")
-                modeSelect = 'PT'
-                screen.screen_show(4, 'PT MODE ON')
-                try:
-                    fpv.changeMode('PT MODE ON')
-                except:
-                    pass
-
-            #CVFL
-            elif 'CVFL' == data:
-                print("i am CVFL")
-                flask_app.modeselect('findlineCV')
-
-            elif 'CVFLColorSet' in data:
-                print("i am CVFLColorSet")
-                color = int(data.split()[1])
-                flask_app.camera.colorSet(color)
-
-            elif 'CVFLL1' in data:
-                print("i am CVFLL1")
-                pos = int(data.split()[1])
-                flask_app.camera.linePosSet_1(pos)
-
-            elif 'CVFLL2' in data:
-                print("i am CVFLL2")
-                pos = int(data.split()[1])
-                flask_app.camera.linePosSet_2(pos)
-
-            elif 'CVFLSP' in data:
-                print("i am CVFLSP")
-                err = int(data.split()[1])
-                flask_app.camera.errorSet(err)
-
-        elif(isinstance(data,dict)):            
-            if data['title'] == "prompt":
-                print("i am a prompt")
-                from webserver.app import PROMPTS
-                import llm
-                text = str(data['data']).strip()
-                PROMPTS.append(text)
-                response['title'] = 'prompt'
-                try:
-                    response['data'] = await asyncio.to_thread(llm.ask, text)
-                except RuntimeError as exc:
-                    response['status'] = 'error'
-                    response['data'] = str(exc)
-                print('prompt response data: %s' % response['data'])
-            elif data['title'] == "findColorSet":
-                color = data['data']
-                flask_app.colorFindSet(color[0],color[1],color[2])
-
-        if not functionMode:
-            if OLED_connection:
-                screen.screen_show(5,'Functions OFF')
-        else:
-            pass
-
-        if DEBUG:
-            print('reply: %s' % response)
-        response = json.dumps(response)
-        await websocket.send(response)
-
-INFO_PORT = 2256        # legacy push feed for the desktop GUI health panel
+        hostname = socket.gethostbyname(socket.gethostname())
+        if hostname.startswith("127.") and env("GET_EXTERNAL_IP"):
+            return "127.0.0.1"
+        return hostname
+    except OSError:
+        return "127.0.0.1"
 
 
-def info_push_loop(client_ip):
-    """Push [cpu_temp cpu_use ram_use] to the GUI every 3s (opt-in: INFO_PUSH=1).
-    Only needed if the GUI is started with GUI_INFO_LISTEN=1; by default the GUI
-    polls 'get_info' over the WebSocket instead."""
-    while True:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            sock.connect((client_ip, INFO_PORT))
-            sock.sendall(('%s %s %s' % (info.get_cpu_tempfunc(), info.get_cpu_use(), info.get_ram_info())).encode())
-            sock.close()
-        except Exception as exc:
-            print('info push failed: %s' % exc)
-        time.sleep(3)
+def check_permit(data: dict) -> bool:
+    """The UI sends {"admin": "..."} for privileged commands."""
+    return data.get("admin") in (None, WS_PASSWORD)
 
 
-async def main_logic(websocket, path=None):
-    addr = websocket.remote_address
-    print('connection from %s:%s' % (addr[0], addr[1]))
+def stop_everything() -> None:
+    move.motorStop()
+    fuc.pause()
+    set_camera_mode("none")
+    servo.stopWiggle()
+
+
+def report_position() -> str:
+    cal = load()
+    return json.dumps({str(ch): cal[ch] for ch in range(RPIservo.NUM_CHANNELS)})
+
+
+def revision() -> str:
+    """What code is running. Used to be `git reset --hard origin/master; reboot`
+    on a button press, which silently discarded local work and restarted the Pi.
+    """
+    import subprocess
     try:
-        await check_permit(websocket)
-    except websockets.ConnectionClosed:
-        print('client %s closed before authenticating' % addr[0])
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
+    except Exception as exc:
+        return f"unknown ({exc})"
+
+
+async def handler(websocket, message: str) -> None:
+    try:
+        data = json.loads(message)
+    except json.JSONDecodeError:
+        await websocket.send(json.dumps({"status": "bad json"}))
         return
-    print('connected! %s' % addr[0])
-    if os.environ.get('INFO_PUSH'):
-        client_ip = websocket.remote_address[0]
-        threading.Thread(target=info_push_loop, args=(client_ip,), daemon=True).start()
-        if DEBUG:
-            print('info push -> %s:%d' % (client_ip, INFO_PORT))
-    try:
-        await recv_msg(websocket)
-    except websockets.ConnectionClosed:
-        print('disconnected: %s' % addr[0])
 
-async def start_ws_server():
-    async with websockets.serve(main_logic, '0.0.0.0', 8888):
-        print('waiting for connection...')
+    command = data.get("command", "")
+    reply = {"command": command, "status": "ok"}
+
+    try:
+        if command in ("wsA", "wsB"):
+            servo.moveAngle(int(data["P_servo"]), int(data["angle"]))
+        elif command == "wsC":
+            PWM = get_zero(int(data["P_servo"]))
+            if data["SiLeft"] == 1:
+                PWM += int(data["PWMD"])
+            elif data["SiRight"] == 1:
+                PWM -= int(data["PWMD"])
+            elif data["SiDown"] == 1:
+                PWM -= int(data["PWMD"])
+            PWM = max(RPIservo.CTRL_RANGE_MIN, min(RPIservo.CTRL_RANGE_MAX, PWM))
+            set_zero(int(data["P_servo"]), PWM)
+            servo.moveCert(int(data["P_servo"]), PWM)
+        elif command == "wsD":
+            set_zero(int(data["P_servo"]), int(data["PWMINIT"]))
+            servo.moveCert(int(data["P_servo"]), int(data["PWMINIT"]))
+            log("saved servo %s zero" % data["P_servo"])
+        elif command in ("wsE", "wsW"):
+            set_camera_mode(data["mode"])
+        elif command == "wsF":
+            set_color_find(int(data["H"]), int(data["S"]), int(data["V"]))
+            log("colour target %s %s %s" % (data["H"], data["S"], data["V"]))
+        elif command == "wsG":
+            if data["mode"] == "automatic":
+                fuc.automatic()
+            elif data["mode"] == "trackLine":
+                fuc.trackLine()
+            else:
+                fuc.pause()
+        elif command == "wsK":
+            if data["scan"] == "yes":
+                fuc.radarScan()
+            else:
+                fuc.pause()
+        elif command == "wsM":
+            move.move(int(data["speed"]), data["direction"], data["turn"], 0.6)
+        elif command == "wsN":
+            if data["light"] == "on":
+                RL.setColor(10, 10, 10)
+                RL.start()
+            else:
+                RL.stop()
+        elif command == "wsO":
+            if data["mode"] == "on":
+                switch.switch(int(data["port"]), 1)
+            else:
+                switch.switch(int(data["port"]), 0)
+        elif command == "wsP":
+            stop_everything()
+        elif command == "wsQ":
+            info.Sensor_Selection = int(data["selection"])
+        elif command == "wsR":
+            log("distance %s cm" % info.checkdist())
+        elif command == "wsS":
+            log(current_ip())
+        elif command == "wsT":
+            servo.initConfig(int(data["initAngle"]), int(data["goalAngle"]))
+            servo.moveAuto()
+        elif command == "wsU":
+            cam = camera()
+            if data["cameraDiagonalW"] == 1:
+                cam.cameraDiagonalW = 640
+            elif data["cameraDiagonalW"] == 2:
+                cam.cameraDiagonalW = 480
+            if data["cameraDiagonalH"] == 1:
+                cam.cameraDiagonalH = 480
+            elif data["cameraDiagonalH"] == 2:
+                cam.cameraDiagonalH = 360
+            set_camera_mode(data["CameraMode"])
+            if data.get("findColorSet"):
+                set_color_find(int(data["H"]), int(data["S"]), int(data["V"]))
+        elif command == "wsV":
+            log(report_position())
+        elif command == "wsX":
+            log("distance %s cm" % info.checkdist())
+        elif command == "wsY":
+            log("revision %s" % revision())
+        elif command == "wsZ":
+            set_camera_mode("none")
+        elif command == "prompt":
+            result = submit(data.get("text", ""))
+            reply.update(result)
+            log(result.get("reply", result.get("error", ""))[:16])
+        else:
+            reply["status"] = "unknown command: %s" % command
+    except Exception as exc:
+        reply["status"] = f"error: {exc}"
+
+    await websocket.send(json.dumps(reply))
+
+
+async def main() -> None:
+    start()
+    async with websockets.serve(handler, "0.0.0.0", WS_PORT):
+        print(f"WebSocket listening on 0.0.0.0:{WS_PORT}")
         await asyncio.Future()
 
-if __name__ == '__main__':
-    switch.switchSetup()
-    switch.set_all_switch_off()
 
-    HOST = ''
-    PORT = 10223                              #Define port serial 
-    BUFSIZ = 1024                             #Define buffer size
-    ADDR = (HOST, PORT)
-
-    global flask_app
-    flask_app = app.webapp()
-    flask_app.startthread()
-
+if __name__ == "__main__":
     try:
-        RL=robotLight.RobotLight()
-        RL.start()
-        RL.breath(70,70,255)
-    except:
-        print('Use "sudo pip3 install rpi_ws281x" to install WS_281x package\n使用"sudo pip3 install rpi_ws281x"命令来安装rpi_ws281x')
-        pass
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    while  1:
-        wifi_check()
-        try:                  #Start server,waiting for client
-            loop.run_until_complete(start_ws_server())
-            break
-        except Exception as e:
-            print(e)
-            RL.setColor(0,0,0)
-
-        try:
-            RL.setColor(0,80,255)
-        except:
-            pass
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("shutting down")

@@ -24,6 +24,7 @@ VIDEO_PORT = int(os.environ.get('VIDEO_PORT', 5000))  # MJPEG feed from server/a
 
 BUFSIZ = 1024
 INFO_INTERVAL = 3         # seconds between CPU/RAM polls
+RECONNECT_INTERVAL = 3    # seconds between reconnect attempts after a drop
 ip_stu = 1          # 1 = disconnected, 0 = connected
 frame_num = 0
 fps = 0
@@ -156,6 +157,7 @@ def get_info_once():
 def Info_receive():
     """Poll robot health over the WebSocket. The old 2256 push channel is dead:
     webServer.py never dials back to the PC, it only answers 'get_info'."""
+    global ws, ip_stu
     while ip_stu == 0 and ws is not None:
         try:
             set_health(*get_info_once())
@@ -163,6 +165,21 @@ def Info_receive():
             print('Info poll failed: %s' % exc)
             break
         time.sleep(INFO_INTERVAL)
+    else:
+        return                   # user-initiated disconnect, nothing to retry
+
+    # Connection dropped: retry until it is back. A successful socket_connect()
+    # starts a fresh Info_receive thread, so this one just ends.
+    ip_stu = 1
+    try:
+        ws.close()
+    except Exception:
+        pass
+    while ip_stu == 1:
+        l_ip_4.config(text='Reconnecting')
+        l_ip_4.config(bg='#FF8F00')
+        time.sleep(RECONNECT_INTERVAL)
+        socket_connect()
 
 
 def Info_push_listener():

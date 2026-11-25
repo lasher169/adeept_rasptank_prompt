@@ -25,6 +25,20 @@ def load_env(path: Path) -> None:
 load_env(ROOT / ".env")
 
 
+def env(key: str, default: str | None = None) -> str | None:
+    """Read a setting, or `default` when it is unset or blank."""
+    value = (os.environ.get(key) or "").strip()
+    return value or default
+
+
+def env_int(key: str, default: int) -> int:
+    """Read an integer setting, falling back to `default` if it is not a number."""
+    try:
+        return int(env(key, str(default)))
+    except ValueError:
+        return default
+
+
 def port() -> int:
     """Listen port from ``WEB_PORT``, default 5000."""
     raw = os.environ.get("WEB_PORT", "5000").strip()

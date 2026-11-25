@@ -12,38 +12,27 @@ import time
 import threading
 import imutils
 import robotLight
+from webserver.config import env
 
-led = robotLight.RobotLight()
+led = None
 pid = PID.PID()
 pid.SetKp(0.5)
 pid.SetKd(0)
 pid.SetKi(0)
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-
-def _env_float(name, default):
-    """Read a float from the environment, falling back to the repo-root .env."""
-    raw = os.environ.get(name)
-    if raw is None:
-        try:
-            with open(os.path.join(ROOT, '.env')) as fh:
-                for line in fh:
-                    line = line.strip()
-                    if line.startswith(name + '='):
-                        raw = line.split('=', 1)[1].strip().strip("'\"")
-                        break
-        except OSError:
-            pass
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
+def _led():
+    """The NeoPixel strip, created on first use (needs root for DMA)."""
+    global led
+    if led is None:
+        led = robotLight.RobotLight()
+        led.start()
+    return led
 
 
 CVRun = 1
 FLIP_180 = True          # camera is mounted upside down in the chassis
-DISTANCE_TO_STOP = _env_float('DISTANCE_TO_STOP', 0.30)   # metres
+DISTANCE_TO_STOP = float(env("DISTANCE_TO_STOP", 0.30))   # metres
 linePos_1 = 440
 linePos_2 = 380
 lineColorSet = 255
@@ -94,15 +83,11 @@ class CVThread(threading.Thread):
     X_lock = 0
     tor = 17
 
-    scGear = RPIservo.ServoCtrl()
-    scGear.moveInit()
-    move.setup()
-    switch.switchSetup()
-
     def __init__(self, *args, **kwargs):
         self.CVThreading = 0
         self.CVMode = 'none'
         self.imgCV = None
+        self.scGear = RPIservo.servo()
 
         self.mov_x = None
         self.mov_y = None
@@ -235,13 +220,13 @@ class CVThread(threading.Thread):
                                              cv2.contourArea(c), _distance_text(metres, note)))
                     move.motorStop()
                 
-            led.setColor(255,78,0)
+            _led().setColor(255, 78, 0)
             # switch.switch(1,1)
             # switch.switch(2,1)
             # switch.switch(3,1)
 
         if (timestamp - self.lastMovtionCaptured).seconds >= 0.5:
-            led.setColor(0,78,255)
+            _led().setColor(0, 78, 255)
             self.drawing = 0
             # switch.switch(1,0)
             # switch.switch(2,0)
@@ -256,7 +241,7 @@ class CVThread(threading.Thread):
             #turnRight
             error = (posInput-320)/3
             outv = int(round((pid.GenOut(error)),0))
-            CVThread.scGear.moveAngle(0,-outv)
+            self.scGear.moveAngle(0, -outv)
             if CVRun:
                 move.move(80, 'no', 'right', 0.5)
             else:
@@ -267,7 +252,7 @@ class CVThread(threading.Thread):
             #turnLeft
             error = (320-posInput)/3
             outv = int(round((pid.GenOut(error)),0))
-            CVThread.scGear.moveAngle(0,outv)
+            self.scGear.moveAngle(0, outv)
             if CVRun:
                 move.move(80, 'no', 'left', 0.5)
             else:
@@ -319,13 +304,13 @@ class CVThread(threading.Thread):
         self.pause()
 
 
-    def servoMove(ID, Dir, errorInput):
+    def servoMove(self, ID, Dir, errorInput):
         if ID == 1:
             errorGenOut = CVThread.kalman_filter_X.kalman(errorInput)
             CVThread.P_anglePos += 0.15*(errorGenOut*Dir)*CVThread.cameraDiagonalW/CVThread.videoW
 
             if abs(errorInput) > CVThread.tor:
-                CVThread.scGear.moveAngle(ID,CVThread.P_anglePos)
+                self.scGear.moveAngle(ID, CVThread.P_anglePos)
                 CVThread.X_lock = 0
             else:
                 CVThread.X_lock = 1
@@ -334,7 +319,7 @@ class CVThread(threading.Thread):
             CVThread.T_anglePos += 0.1*(errorGenOut*Dir)*CVThread.cameraDiagonalH/CVThread.videoH
 
             if abs(errorInput) > CVThread.tor:
-                CVThread.scGear.moveAngle(ID,CVThread.T_anglePos)
+                self.scGear.moveAngle(ID, CVThread.T_anglePos)
                 CVThread.Y_lock = 0
             else:
                 CVThread.Y_lock = 1
@@ -360,19 +345,13 @@ class CVThread(threading.Thread):
             error_Y = 240 - Y
             error_X = 320 - X
             # CVThread.servoMove(CVThread.P_servo, CVThread.P_direction, error_X)
-            CVThread.servoMove(CVThread.T_servo, CVThread.T_direction, error_Y)
+            self.servoMove(CVThread.T_servo, CVThread.T_direction, error_Y)
 
             # if CVThread.X_lock == 1 and CVThread.Y_lock == 1:
             if CVThread.Y_lock == 1:
-                led.setColor(255,78,0)
-                # switch.switch(1,1)
-                # switch.switch(2,1)
-                # switch.switch(3,1)
+                _led().setColor(255, 78, 0)
             else:
-                led.setColor(0,78,255)
-                # switch.switch(1,0)
-                # switch.switch(2,0)
-                # switch.switch(3,0)
+                _led().setColor(0, 78, 255)
         else:
             self.findColorDetection = 0
             move.motorStop()
